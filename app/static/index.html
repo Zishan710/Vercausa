@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vercausa Live Monitor</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="bg-grid"></div>
+<div class="bg-glow a"></div>
+<div class="bg-glow b"></div>
+
+<div class="shell">
+<header class="topbar">
+  <div class="brand">
+    <svg class="logo" viewBox="0 0 40 40" aria-hidden="true">
+      <defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5ff0ff"/><stop offset="1" stop-color="#8b7bff"/></linearGradient></defs>
+      <g class="ring"><circle cx="20" cy="20" r="17" fill="none" stroke="url(#lg)" stroke-width="2" stroke-dasharray="22 8"/></g>
+      <g class="ring2"><circle cx="20" cy="20" r="11" fill="none" stroke="#2fd9f4" stroke-opacity=".6" stroke-width="1.5" stroke-dasharray="6 5"/></g>
+      <circle cx="20" cy="20" r="4.5" fill="url(#lg)"/>
+    </svg>
+    <div><div class="brand-name">Vercausa</div><div class="brand-sub">Causal intelligence · live</div></div>
+  </div>
+  <div class="feed">
+    <div class="feed-item"><span class="k">Machine</span><span class="v" id="machine">MILL-01</span></div>
+    <div class="feed-item"><span class="k">Feed time</span><span class="v mono" id="clock">—</span></div>
+    <div class="feed-item wide"><span class="k">Reading <b id="position" class="mono">0 / 10,000</b></span><div class="progress"><div id="progress-fill"></div></div></div>
+  </div>
+  <div class="controls">
+    <button id="play" class="btn primary">▶ Play</button>
+    <button id="next" class="btn glow">⏭ Jump to next failure</button>
+    <label class="speed">Speed
+      <select id="speed">
+        <option value="1">1×</option><option value="2">2×</option><option value="5">5×</option>
+        <option value="10">10×</option><option value="25">25×</option>
+      </select>
+    </label>
+    <label class="toggle"><input type="checkbox" id="autopause" checked> Pause on failure</label>
+    <button id="reset" class="btn">↺ Reset</button>
+  </div>
+</header>
+
+<section class="panel pipeline reveal">
+  <div class="panel-head"><h2>Pipeline <span class="tag">every reading flows through the six layers</span></h2></div>
+  <div class="flow-wrap"><canvas id="flow"></canvas><div class="nodes" id="nodes"></div></div>
+</section>
+
+<main class="layout">
+  <section class="panel machine reveal d1">
+    <div class="panel-head">
+      <h2>Machine state <span class="tag">digital twin · live</span></h2>
+      <div id="status" class="status idle"><span class="light"></span><span id="status-text">Waiting for data</span></div>
+    </div>
+    <div class="machine-body">
+      <div class="rig" id="rig">
+        <svg viewBox="0 0 200 200" aria-label="Milling cutter">
+          <defs>
+            <linearGradient id="house" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a3a5c"/><stop offset="1" stop-color="#121c31"/></linearGradient>
+            <radialGradient id="hub" cx=".4" cy=".35"><stop offset="0" stop-color="#e8f3ff"/><stop offset="1" stop-color="#6d82a8"/></radialGradient>
+            <linearGradient id="block" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3b4b6b"/><stop offset="1" stop-color="#1b2640"/></linearGradient>
+          </defs>
+          <g class="halo"><circle cx="100" cy="100" r="80" fill="none" stroke="#2fd9f4" stroke-opacity=".35" stroke-width="1.5" stroke-dasharray="3 9"/></g>
+          <rect x="78" y="4" width="44" height="36" rx="6" fill="url(#house)" stroke="#3e5580"/>
+          <rect x="93" y="38" width="14" height="22" fill="#4d6390"/>
+          <g class="cutter" id="cutter">
+            <circle cx="100" cy="100" r="44" fill="#16223a" stroke="#4a6593" stroke-width="2"/>
+            <g id="teeth"></g>
+            <circle cx="100" cy="100" r="16" fill="url(#hub)"/>
+            <circle cx="100" cy="100" r="5" fill="#0b1426"/>
+          </g>
+          <rect x="30" y="160" width="140" height="30" rx="4" fill="url(#block)" stroke="#3e5580"/>
+          <line class="spark s1" x1="92" y1="150" x2="88" y2="156" stroke="#ffbe4d" stroke-width="2" style="--dx:-14px"/>
+          <line class="spark s2" x1="108" y1="150" x2="112" y2="156" stroke="#ffd37a" stroke-width="2" style="--dx:16px"/>
+          <line class="spark s3" x1="100" y1="152" x2="100" y2="158" stroke="#fff1c2" stroke-width="2" style="--dx:4px"/>
+        </svg>
+        <div class="rig-readout"><b id="rig-rpm">—</b> rpm · wear <b id="rig-wear">—</b></div>
+      </div>
+      <div id="gauges" class="gauges"></div>
+    </div>
+    <div class="physics">
+      <div class="meter" id="meter-power"></div>
+      <div class="meter" id="meter-tdiff"></div>
+    </div>
+    <div class="chart">
+      <div class="chart-head"><span>Power over the last 90 readings</span><span>green band = safe range</span></div>
+      <canvas id="spark"></canvas>
+    </div>
+    <div id="empty" class="empty"><div class="pulse-ring"></div><div>Press <strong>Play</strong> to start the machine feed,<br>or <strong>Jump to next failure</strong>.</div></div>
+  </section>
+
+  <section class="side">
+    <div class="panel reveal d2">
+      <div class="panel-head"><h2>Failure risk now <span class="tag">causal model</span></h2></div>
+      <div id="risks" class="risks"></div>
+    </div>
+    <div class="panel alerts-panel reveal d3">
+      <div class="panel-head"><h2>Detected failures <span id="alert-count" class="count">0</span></h2></div>
+      <div id="alerts" class="alerts"><p class="empty-note">No failures detected yet.</p></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<div id="toast" class="toast" hidden>
+  <div class="icon">!</div>
+  <div><strong id="toast-title"></strong><div id="toast-body" class="toast-summary"></div></div>
+  <button id="toast-open" class="btn primary">Investigate →</button>
+</div>
+
+<div id="scrim" class="scrim" hidden></div>
+<aside id="drawer" class="drawer" hidden>
+  <div class="drawer-head">
+    <div><span id="d-chip" class="chip"></span><h2 id="d-title"></h2><div id="d-meta" class="muted"></div></div>
+    <button id="d-close" class="btn" aria-label="Close">✕</button>
+  </div>
+  <div class="drawer-body">
+    <section>
+      <h3>What happened</h3>
+      <p id="d-summary" class="summary"></p>
+      <p id="d-reason" class="reason"></p>
+    </section>
+    <section>
+      <h3>Root cause <span>what drove this failure, from the causal model</span></h3>
+      <div id="d-causes" class="causes"></div>
+      <svg id="d-path" class="path" viewBox="0 0 540 150" role="img" aria-label="Cause path"></svg>
+    </section>
+    <section>
+      <h3>What if…? <span>change a cause and see the effect</span></h3>
+      <div id="d-actions" class="actions"></div>
+      <div id="d-sliders" class="sliders"></div>
+      <div id="d-result" class="result"></div>
+    </section>
+  </div>
+</aside>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

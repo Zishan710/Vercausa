@@ -1,0 +1,13 @@
+# Exact versions: models/causal_layer.joblib only loads reliably with the
+# versions it was saved with.
+pandas==2.3.3
+numpy==2.0.2
+networkx==3.2.1
+neo4j==5.28.6
+dowhy==0.14
+scikit-learn==1.6.1
+joblib==1.5.3
+pytest==8.4.2
+fastapi==0.128.8
+uvicorn==0.39.0
+httpx==0.28.1

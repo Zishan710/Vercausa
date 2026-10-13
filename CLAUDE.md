@@ -161,7 +161,14 @@ fill in separately.
 
 ## Still open / decide before or early in implementation
 
-- Exact KG schema (node/edge types for machines, sensors, processes, fault events)
+- ~~Exact KG schema~~ — decided, see `vercausa/schema.py`. Type level (Signal,
+  FailureMode) holds the causal structure; instance level (Machine, Sensor,
+  FailureEvent) holds twin state and history. CANDIDATE_CAUSE_OF runs
+  Signal | DerivedQuantity → FailureMode. DerivedQuantity nodes (temperature
+  difference, power) hold textbook-physics formulas only — nothing
+  AI4I-specific (e.g. not wear × torque); thresholds are always learnt.
+  Without them the SCM learns correlational shortcuts and gives wrong
+  what-if answers (measured in Phase 4).
 - Team role split for the three-person group (not yet discussed with Claude)
 - Whether GraphRAG runs against a local LLM or an API-based one
 - Evaluation metrics beyond root-cause attribution accuracy (e.g., false-alarm rate,

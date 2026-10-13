@@ -1,0 +1,125 @@
+{
+  "trained_at": "2026-09-26T20:01:22",
+  "training_seconds": 5.8,
+  "data_file": "data/ai4i2020.csv",
+  "data_sha256": "dc6630cd9b1f0f853922fad78a1b6436570d3f1ec863f1dd5c4340ac56bc8a8e",
+  "rows": 10000,
+  "machine_failures": 339,
+  "structure_source": "Knowledge Graph candidate edges (vercausa/schema.py)",
+  "mechanisms": [
+    {
+      "node": "process_temperature",
+      "kind": "signal",
+      "inputs": [
+        "air_temperature"
+      ],
+      "model": "linear additive-noise model (DoWhy-GCM)"
+    },
+    {
+      "node": "tool_wear",
+      "kind": "signal",
+      "inputs": [
+        "product_variant"
+      ],
+      "model": "linear additive-noise model (DoWhy-GCM)"
+    },
+    {
+      "node": "TWF",
+      "kind": "failure_mode",
+      "inputs": [
+        "tool_wear"
+      ],
+      "model": "HistGradientBoostingClassifier (DoWhy-GCM ClassifierFCM)",
+      "min_samples_leaf": 400,
+      "training_positives": 46,
+      "explained_in_terms_of": [
+        "tool_wear"
+      ]
+    },
+    {
+      "node": "HDF",
+      "kind": "failure_mode",
+      "inputs": [
+        "rotational_speed",
+        "temperature_difference"
+      ],
+      "model": "HistGradientBoostingClassifier (DoWhy-GCM ClassifierFCM)",
+      "min_samples_leaf": 20,
+      "training_positives": 115,
+      "explained_in_terms_of": [
+        "air_temperature",
+        "process_temperature",
+        "rotational_speed"
+      ]
+    },
+    {
+      "node": "PWF",
+      "kind": "failure_mode",
+      "inputs": [
+        "power"
+      ],
+      "model": "HistGradientBoostingClassifier (DoWhy-GCM ClassifierFCM)",
+      "min_samples_leaf": 20,
+      "training_positives": 95,
+      "explained_in_terms_of": [
+        "rotational_speed",
+        "torque"
+      ]
+    },
+    {
+      "node": "OSF",
+      "kind": "failure_mode",
+      "inputs": [
+        "product_variant",
+        "tool_wear",
+        "torque"
+      ],
+      "model": "HistGradientBoostingClassifier (DoWhy-GCM ClassifierFCM)",
+      "min_samples_leaf": 50,
+      "training_positives": 98,
+      "explained_in_terms_of": [
+        "product_variant",
+        "tool_wear",
+        "torque"
+      ]
+    },
+    {
+      "node": "temperature_difference",
+      "kind": "derived",
+      "inputs": [
+        "air_temperature",
+        "process_temperature"
+      ],
+      "model": "physics formula (not learnt)"
+    },
+    {
+      "node": "power",
+      "kind": "derived",
+      "inputs": [
+        "rotational_speed",
+        "torque"
+      ],
+      "model": "physics formula (not learnt)"
+    }
+  ],
+  "edge_strengths": {
+    "air_temperature -> process_temperature": 0.768,
+    "product_variant -> tool_wear": 0.0,
+    "tool_wear -> TWF": 1.0,
+    "air_temperature -> HDF": 0.447,
+    "process_temperature -> HDF": 0.108,
+    "rotational_speed -> HDF": 0.445,
+    "rotational_speed -> PWF": 0.183,
+    "torque -> PWF": 0.817,
+    "product_variant -> OSF": 0.076,
+    "tool_wear -> OSF": 0.439,
+    "torque -> OSF": 0.485
+  },
+  "validation": "5-fold cross-validation on held-out rows: scripts/evaluate_causal.py, scripts/evaluate_simulation.py",
+  "versions": {
+    "python": "3.9.6",
+    "dowhy": "0.14",
+    "scikit-learn": "1.6.1"
+  },
+  "model_file": "models/causal_layer.joblib"
+}
