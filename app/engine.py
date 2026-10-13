@@ -4,7 +4,8 @@ Feeds AI4I 2020 rows one at a time into the Digital Twin as if they were
 arriving from the machine, and enriches every detected failure with the
 Causal Layer's root-cause explanation. What-if requests go to the
 Simulation Layer, starting from the state the twin recorded at that moment
-(twin = context, SCM = simulation).
+(twin = context, SCM = simulation). Recommendations come from the Action
+Layer's agents, which plan over the same twin state.
 """
 
 from __future__ import annotations
@@ -14,6 +15,9 @@ import time
 from collections import deque
 from dataclasses import replace
 
+import pandas as pd
+
+from vercausa.agents import ActionAgents, operating_levels
 from vercausa.causal import CausalLayer
 from vercausa.explain import (
     MODE_NAMES, OBSERVABLE, derived_values, explain_failure, model_row, typical_values, whatif,
@@ -42,6 +46,8 @@ class ReplayEngine:
         self.sim = SimulationLayer(causal)
         self.readings = list(load_ai4i(csv, machine_id=machine_id))
         self.typical = typical_values(self.readings)
+        self.agents = ActionAgents(causal, self.sim, self.typical,
+                                   operating_levels(pd.DataFrame([r.values for r in self.readings])))
         self.machine_id = machine_id
         self.mode = mode
         self.clock = clock
@@ -62,6 +68,7 @@ class ReplayEngine:
         self.position = 0
         self.playing = False
         self.events: list = []
+        self.plans: dict = {}
         self.history: deque = deque(maxlen=HISTORY)
         self.last_reading: SensorReading | None = None
         self.last_new_events: list = []
@@ -157,6 +164,21 @@ class ReplayEngine:
     def simulate(self, event_id: str, interventions: dict) -> dict:
         event = next(e for e in self.events if e["id"] == event_id)
         return whatif(self.sim, event["values"], interventions, event["mechanism"])
+
+    # ---------- recommended actions ----------
+
+    def recommend(self, event_id: str | None = None) -> dict:
+        """Ranked actions for a failure event, or for the live machine state."""
+        if event_id is not None:
+            if event_id not in self.plans:
+                event = next(e for e in self.events if e["id"] == event_id)
+                self.plans[event_id] = self.agents.for_event(event)
+            return dict(self.plans[event_id], event_id=event_id)
+        r = self.last_reading
+        if r is None:
+            raise ValueError("The machine has not sent any readings yet.")
+        return dict(self.agents.plan(dict(r.values, product_variant=r.product_variant)),
+                    event_id=None, row=r.source_row)
 
     # ---------- snapshot for the UI ----------
 

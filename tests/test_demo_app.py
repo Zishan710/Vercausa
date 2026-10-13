@@ -131,3 +131,24 @@ def test_api_ask_answers_from_graph_facts(engine):
         h = client.post("/api/ask", json={"question": "Sing me a song"}).json()
         assert h["source"] == "help"
         assert client.post("/api/ask", json={"question": "  "}).status_code == 400
+
+
+def test_recommend_for_an_event_and_live_state(engine):
+    with pytest.raises(ValueError):
+        engine.recommend()
+    e = engine.next_failure()[0]
+    plan = engine.recommend(e["id"])
+    assert plan["event_id"] == e["id"] and plan["targets"][0] == e["mechanism"]
+    assert plan["recommendations"][0]["resolves"]
+    assert engine.recommend(e["id"])["recommendations"] == plan["recommendations"]
+    assert engine.recommend()["row"] == e["row"]
+
+
+def test_api_recommend(engine):
+    client = TestClient(create_app(engine))
+    assert client.post("/api/recommend", json={}).status_code == 409
+    client.post("/api/control", json={"action": "next_failure"})
+    event = client.get("/api/state").json()["events"][0]
+    plan = client.post("/api/recommend", json={"event_id": event["id"]}).json()
+    assert plan["recommendations"] and plan["trace"][0].startswith("Diagnostician")
+    assert client.post("/api/recommend", json={"event_id": "nope"}).status_code == 404

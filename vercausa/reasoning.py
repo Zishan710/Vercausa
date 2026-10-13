@@ -3,12 +3,13 @@
 A question goes through four steps:
 
 1. Understand -- a local LLM maps the question to an intent (explain an
-   event, current state, list events, what-if) and its entities. Explicit
+   event, current state, list events, what-if, recommend an action) and its
+   entities. Explicit
    details in the text (reading numbers, percentages, target values) are
    then read by deterministic rules, which override the LLM where they apply.
 2. Retrieve -- facts come only from the knowledge graph (failure events,
    their rule, sensor snapshot, permitted cause paths, live twin state) and
-   from the causal and simulation layers run on that graph state. Each fact
+   from the causal, simulation and action layers run on that graph state. Each fact
    is numbered [F1], [F2], ...
 3. Generate -- the LLM answers using only those facts and cites them.
 4. Verify -- every number in the answer must appear in the facts and every
@@ -34,7 +35,7 @@ from vercausa.simulation import SimulationLayer
 
 DEFAULT_MODEL = "qwen2.5:7b-instruct"
 DEFAULT_OLLAMA = "http://127.0.0.1:11434"
-INTENTS = ("explain_event", "current_state", "list_events", "what_if", "unsupported")
+INTENTS = ("explain_event", "current_state", "list_events", "what_if", "recommend", "unsupported")
 SIGNALS = ("air_temperature", "process_temperature", "rotational_speed", "torque", "tool_wear")
 LABEL = {"air_temperature": "air temperature", "process_temperature": "process temperature",
          "rotational_speed": "spindle speed", "torque": "torque", "tool_wear": "tool wear",
@@ -43,8 +44,9 @@ LABEL = {"air_temperature": "air temperature", "process_temperature": "process t
 UNIT = {"air_temperature": "K", "process_temperature": "K", "rotational_speed": "rpm", "torque": "Nm",
         "tool_wear": "min", "power": "W", "temperature_difference": "K"}
 HELP = ("I can answer questions about this machine's failures (for example \"Why did it fail at reading 51?\"), "
-        "its current state, the list of detected failures, and what-if changes such as "
-        "\"What if torque was reduced by 20% in the last power failure?\"")
+        "its current state, the list of detected failures, what-if changes such as "
+        "\"What if torque was reduced by 20% in the last power failure?\", and what to do "
+        "(\"What should I do about reading 9975?\").")
 
 
 # ---------------------------------------------------------------- LLM
@@ -94,6 +96,7 @@ intent:
 - current_state: how the machine is doing right now
 - list_events: which failures happened, how many
 - what_if: what would happen if a signal were changed
+- recommend: what should be done ("what should I do", "how do we fix it"), which action is best
 - unsupported: anything else
 row: the reading number if one is mentioned, else null.
 mechanism: TWF (tool wear failure), HDF (heat dissipation failure), PWF (power failure),
@@ -129,7 +132,10 @@ def rule_intent(question: str) -> dict:
     named = [(m.start(), code) for code, pat in _MECH_PATTERNS.items() for m in [re.search(pat, q)] if m]
     if named:
         out["mechanism"] = min(named)[1]
-    if re.search(r"\bwhat if\b|\bwould happen\b|\bif we\b|\bsuppose\b", q):
+    if re.search(r"\bwhat should\b|\brecommend\w*|\bhow (?:do|can|should) (?:i|we) (?:fix|prevent|avoid)\b"
+                 r"|\bbest action\b|\bnext step|\bwhat (?:can|do) (?:i|we) do\b|\bwhat to do\b", q):
+        out["intent"] = "recommend"
+    elif re.search(r"\bwhat if\b|\bwould happen\b|\bif we\b|\bsuppose\b", q):
         out["intent"] = "what_if"
         if re.search(r"replac\w* the tool|new tool|change the tool", q):
             out.update(signal="tool_wear", change_type="absolute", change_value=0.0)
@@ -164,7 +170,9 @@ def understand(question: str, llm) -> dict:
         except (httpx.HTTPError, ValueError, KeyError):
             pass
     rules = rule_intent(question)
-    if rules.get("intent") and (parsed["intent"] == "unsupported" or llm is None):
+    # Asking what to do is an unambiguous request for an action, which the LLM
+    # sometimes reads as a status question.
+    if rules.get("intent") and (parsed["intent"] == "unsupported" or llm is None or rules["intent"] == "recommend"):
         parsed["intent"] = rules["intent"]
     for k in ("row", "mechanism", "signal", "change_type", "change_value"):
         if rules.get(k) is not None:
@@ -227,13 +235,18 @@ def _snapshot_text(values: dict) -> str:
 
 
 class GraphRetriever:
-    def __init__(self, store: GraphStore, causal: CausalLayer, sim: SimulationLayer, typical: dict, machine_id: str):
+    def __init__(self, store: GraphStore, causal: CausalLayer, sim: SimulationLayer, typical: dict, machine_id: str,
+                 agents=None):
         self.store, self.causal, self.sim, self.typical, self.machine_id = store, causal, sim, typical, machine_id
+        self.agents = agents
 
     def find_event(self, row, mechanism):
         events = self.store.failure_events(self.machine_id, mechanism=mechanism)
         if row is not None:
             events = [e for e in events if e["source_row"] == row]
+            if not events and mechanism is not None:
+                # The reading is explicit; a failure type the LLM inferred may be wrong.
+                return self.find_event(row, None)
         return events[0] if events else None
 
     def _event_facts(self, facts: _Facts, event: dict) -> dict:
@@ -332,9 +345,46 @@ class GraphRetriever:
                       "Simulation Layer (data-support check)")
         return facts
 
+    def recommend(self, intent: dict) -> _Facts:
+        """The Action Layer's plan for a failure event (if one is named) or for the live state."""
+        if self.agents is None:
+            facts = _Facts()
+            facts.add("The Action Layer is not available in this session.", "Action Layer")
+            return facts
+        if intent.get("row") is not None or intent.get("mechanism") is not None:
+            facts = _Facts()
+            event = self.find_event(intent.get("row"), intent.get("mechanism"))
+            if event is None:
+                facts.add("No matching failure event is recorded in the knowledge graph yet.", "(:FailureEvent) query")
+                return facts
+            values = self._event_facts(facts, event)
+            plan = self.agents.plan(values, [event["mechanism"]])
+        else:
+            facts = self.current_state(intent)
+            st = self.store.machine_state(self.machine_id)
+            if st["last_updated"] is None:
+                return facts
+            values = {s: st["sensors"][s]["value"] for s in SIGNALS}
+            values["product_variant"] = st["product_variant"]
+            plan = self.agents.plan(values)
+        if not plan["targets"]:
+            facts.add("The Action Layer's diagnosis: no failure mode is at risk right now, so no action is needed.",
+                      "Action Layer (AI agents)")
+            return facts
+        names = " and ".join(MODE_NAMES[m] for m in plan["targets"])
+        facts.add(f"The Action Layer's agents tested {plan['considered']} candidate actions in simulation, on the "
+                  f"knowledge graph's permitted causes of {names}.", "Action Layer (AI agents)")
+        if not plan["recommendations"]:
+            facts.add("None of the tested actions clears every failure risk in simulation.", "Action Layer (AI agents)")
+        for a in plan["recommendations"]:
+            facts.add(f"Recommended action {a['rank']}: {a['title']}. In simulation: {'; '.join(a['reasons'])}.",
+                      "Action Layer (ranked by AI agents, checked by the Simulation Layer)")
+        return facts
+
     def retrieve(self, intent: dict) -> _Facts:
         return {"explain_event": self.explain_event, "current_state": self.current_state,
-                "list_events": self.list_events, "what_if": self.what_if}[intent["intent"]](intent)
+                "list_events": self.list_events, "what_if": self.what_if,
+                "recommend": self.recommend}[intent["intent"]](intent)
 
 
 # ---------------------------------------------------------------- 3. generate + 4. verify
@@ -390,6 +440,9 @@ def template_answer(intent: str, facts: list) -> str:
         plain = next(f for f in facts if f.text.startswith("Plain-language root cause:"))
         return (f"{facts[0].text} [{facts[0].id}] {plain.text.split(': ', 1)[1]} [{plain.id}] "
                 f"{facts[4].text} [{facts[4].id}]") if "F5" in by_id else f"{plain.text} [{plain.id}]"
+    if intent == "recommend":
+        plan = [f for f in facts if f.source.startswith("Action Layer")]
+        return " ".join(f"{f.text} [{f.id}]" for f in (plan or facts[-1:]))
     if intent == "what_if":
         sim = [f for f in facts if f.source.startswith("Simulation Layer")]
         return " ".join(f"{f.text} [{f.id}]" for f in (sim or facts[-1:]))

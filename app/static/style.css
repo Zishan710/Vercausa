@@ -105,8 +105,6 @@ body.alarm .bg-glow.b { background: radial-gradient(circle, #ff2d4a 0%, transpar
 .node.hit-bad .dot svg { stroke: var(--red); }
 .node.hit-sim .dot { border-color: var(--violet); box-shadow: 0 0 0 4px rgba(10,17,32,0.9), 0 0 24px 5px rgba(139,123,255,0.65); transform: scale(1.1); }
 .node.hit-sim .dot svg { stroke: var(--violet); }
-.node.future { opacity: 0.42; }
-.node.future .dot { border-style: dashed; }
 
 /* ---------- machine ---------- */
 .machine { position: relative; overflow: hidden; }
@@ -304,6 +302,23 @@ body.alarm .bg-glow.b { background: radial-gradient(circle, #ff2d4a 0%, transpar
 .trust { font-size: 13px; padding: 10px 14px; border-radius: 10px; background: rgba(255,190,77,0.1); border: 1px solid rgba(255,190,77,0.4); color: #ffd99a; }
 .phys-change { font-size: 13px; color: var(--muted); font-family: var(--mono); }
 .hint-text { color: var(--muted); font-size: 13.5px; }
+
+/* ---------- recommended actions (Action Layer) ---------- */
+.plan { display: grid; gap: 10px; }
+.rec { display: grid; grid-template-columns: 34px 1fr auto; gap: 4px 12px; align-items: start; padding: 12px 14px; border-radius: 12px;
+  border: 1px solid var(--edge-strong); background: rgba(255,255,255,0.03); animation: reveal 0.5s cubic-bezier(.2,.8,.2,1) both; }
+.rec.first { border-color: rgba(53,224,161,0.5); background: rgba(53,224,161,0.06); }
+.rec-rank { grid-row: span 2; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-family: var(--mono);
+  font-weight: 700; background: rgba(139,123,255,0.18); color: #cfc8ff; }
+.rec.first .rec-rank { background: rgba(53,224,161,0.2); color: var(--green); }
+.rec-title { font-weight: 600; line-height: 1.35; }
+.rec-why { grid-column: 2 / 4; margin: 0; padding-left: 16px; font-size: 12.5px; color: var(--muted); line-height: 1.55; }
+.rec-why .warn { color: #ffd99a; }
+.rec .btn { font-size: 12px; padding: 6px 12px; }
+.plan-note { font-size: 13px; color: var(--muted); }
+.plan-trace summary { font-size: 12px; color: var(--muted); cursor: pointer; }
+.plan-trace ol { margin: 8px 0 0; padding-left: 20px; font-size: 12px; color: var(--muted); line-height: 1.55; }
+.plan-trace li { margin-bottom: 4px; }
 
 @media (max-width: 1180px) {
   .layout { grid-template-columns: 1fr; }

@@ -56,6 +56,10 @@ class Question(BaseModel):
     question: str
 
 
+class Recommend(BaseModel):
+    event_id: Optional[str] = None
+
+
 def load_model() -> CausalLayer:
     if MODEL.exists():
         return CausalLayer.load(MODEL)
@@ -202,7 +206,7 @@ def create_app(engine: ReplayEngine | None = None, source: str = "replay",
             raise HTTPException(400, "Type a question first.")
         eng = state["engine"]
         await llm_ready()
-        rag = GraphRAG(GraphRetriever(eng.store, eng.causal, eng.sim, eng.typical, eng.machine_id),
+        rag = GraphRAG(GraphRetriever(eng.store, eng.causal, eng.sim, eng.typical, eng.machine_id, eng.agents),
                        state["llm"] if state["llm_ok"] else None)
         intent = await asyncio.to_thread(rag.understand, question)
         if intent["intent"] == "unsupported":
@@ -210,6 +214,16 @@ def create_app(engine: ReplayEngine | None = None, source: str = "replay",
         facts = rag.retrieve(intent)
         answer = await asyncio.to_thread(rag.generate, question, intent, facts)
         return json_safe(answer.to_dict())
+
+    @app.post("/api/recommend")
+    async def recommend(r: Recommend):
+        eng = state["engine"]
+        if r.event_id is not None and not any(e["id"] == r.event_id for e in eng.events):
+            raise HTTPException(404, "That failure event is not in the current replay. Press Reset?")
+        try:
+            return json_safe(await asyncio.to_thread(eng.recommend, r.event_id))
+        except ValueError as e:
+            raise HTTPException(409, str(e))
 
     @app.post("/api/simulate")
     async def simulate(w: WhatIf):

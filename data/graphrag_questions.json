@@ -1,0 +1,47 @@
+[
+  {"q": "Why did the machine fail at reading 51?", "intent": "explain_event", "row": 51},
+  {"q": "What went wrong at record 169?", "intent": "explain_event", "row": 169},
+  {"q": "Explain the stoppage at reading 3237.", "intent": "explain_event", "row": 3237},
+  {"q": "Root cause of the failure at row 161?", "intent": "explain_event", "row": 161},
+  {"q": "What caused the overstrain failure at reading 9975?", "intent": "explain_event", "row": 9975, "mechanism": "OSF"},
+  {"q": "Why was there a power failure at reading 9975?", "intent": "explain_event", "row": 9975, "mechanism": "PWF"},
+  {"q": "Can you tell me the reason the mill overheated at reading 4852?", "intent": "explain_event", "row": 4852, "mechanism": "HDF"},
+  {"q": "Why did the tool wear failure at reading 412 happen?", "intent": "explain_event", "row": 412, "mechanism": "TWF"},
+  {"q": "What led to the last heat dissipation failure?", "intent": "explain_event", "mechanism": "HDF"},
+  {"q": "Explain the most recent power failure.", "intent": "explain_event", "mechanism": "PWF"},
+
+  {"q": "How is the machine doing right now?", "intent": "current_state"},
+  {"q": "Is the mill healthy at the moment?", "intent": "current_state"},
+  {"q": "What's the current status of MILL-01?", "intent": "current_state"},
+  {"q": "Show me the live sensor values.", "intent": "current_state"},
+  {"q": "What is the failure risk right now?", "intent": "current_state"},
+
+  {"q": "Which failures happened so far?", "intent": "list_events"},
+  {"q": "How many overstrain failures have there been?", "intent": "list_events", "mechanism": "OSF"},
+  {"q": "List all the power failures.", "intent": "list_events", "mechanism": "PWF"},
+  {"q": "How many times did the machine fail?", "intent": "list_events"},
+  {"q": "Give me a list of the heat dissipation failures.", "intent": "list_events", "mechanism": "HDF"},
+
+  {"q": "What if torque was reduced by 20% at reading 9975?", "intent": "what_if", "row": 9975, "signal": "torque", "change_type": "percent", "change_value": -20},
+  {"q": "What if the cutting force was increased by 30% at reading 51?", "intent": "what_if", "row": 51, "signal": "torque", "change_type": "percent", "change_value": 30},
+  {"q": "What would happen if speed went to 1500 rpm at reading 3237?", "intent": "what_if", "row": 3237, "signal": "rotational_speed", "change_type": "absolute", "change_value": 1500},
+  {"q": "If we had replaced the tool at reading 412, would it still have failed?", "intent": "what_if", "row": 412, "signal": "tool_wear", "change_type": "absolute", "change_value": 0},
+  {"q": "Suppose the spindle speed was 10% lower at reading 169, what happens?", "intent": "what_if", "row": 169, "signal": "rotational_speed", "change_type": "percent", "change_value": -10},
+  {"q": "What if we replace the tool in the last overstrain failure?", "intent": "what_if", "mechanism": "OSF", "signal": "tool_wear", "change_type": "absolute", "change_value": 0},
+  {"q": "What if the air temperature had been 298 K at reading 4852?", "intent": "what_if", "row": 4852, "signal": "air_temperature", "change_type": "absolute", "change_value": 298},
+  {"q": "Would lowering torque to 50 Nm have prevented the overstrain at reading 161?", "intent": "what_if", "row": 161, "signal": "torque", "change_type": "absolute", "change_value": 50},
+
+  {"q": "What should I do about reading 9975?", "intent": "recommend", "row": 9975},
+  {"q": "What should I do right now?", "intent": "recommend"},
+  {"q": "How do we fix the power failure at reading 51?", "intent": "recommend", "row": 51, "mechanism": "PWF"},
+  {"q": "What do you recommend for the heat failure at reading 3237?", "intent": "recommend", "row": 3237, "mechanism": "HDF"},
+  {"q": "What's the best action to prevent the overstrain at reading 161?", "intent": "recommend", "row": 161, "mechanism": "OSF"},
+  {"q": "How can we prevent the tool wear failure at reading 412?", "intent": "recommend", "row": 412, "mechanism": "TWF"},
+  {"q": "What can I do to avoid failures right now?", "intent": "recommend"},
+
+  {"q": "What's the weather tomorrow?", "intent": "unsupported"},
+  {"q": "Write me a poem about machines.", "intent": "unsupported"},
+  {"q": "Who won the cricket match yesterday?", "intent": "unsupported"},
+  {"q": "What is the capital of France?", "intent": "unsupported"},
+  {"q": "Translate hello into Gujarati.", "intent": "unsupported"}
+]

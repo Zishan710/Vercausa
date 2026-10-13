@@ -16,6 +16,7 @@ which ships with documented failure mechanisms that serve as ground truth.
 | Causal | Structural causal model, with structure taken from the graph and effects learnt from data | `vercausa/causal.py` |
 | Simulation | Counterfactual "what if" changes against the twin's recorded state | `vercausa/simulation.py` |
 | Reasoning (GraphRAG) | Answers questions from graph facts, using a local LLM, and checks every number and citation | `vercausa/reasoning.py` |
+| Action (AI agents) | LangGraph agents diagnose, propose fixes, test each one in simulation and rank them | `vercausa/agents.py` |
 | Streaming | Live sensor readings over MQTT | `vercausa/streaming.py` |
 
 ## Setup
@@ -81,6 +82,10 @@ Stop the publisher and the dashboard marks the machine offline after
 | `python scripts/validate_detection.py` | Check the detection rules against the dataset's labels |
 | `python scripts/evaluate_causal.py` | Root-cause accuracy, using 5-fold cross-validation |
 | `python scripts/evaluate_simulation.py` | What-if accuracy against the true failure mechanisms |
+| `python scripts/evaluate_actions.py` | Whether the agents' recommendations prevent real failures under the true mechanisms |
+| `python scripts/evaluate_baseline.py` | Vercausa vs correlation-based ML: prediction, root cause, what-if, actions (about an hour) |
+| `python scripts/evaluate_alarms.py` | Failures warned of vs false alarms on healthy readings |
+| `python scripts/evaluate_graphrag.py` | GraphRAG on 40 operator questions with the local LLM (needs Ollama) |
 | `python scripts/build_twin.py --limit 2000` | Fill the knowledge graph / twin from the dataset |
 | `python scripts/whatif_demo.py` | Example what-if questions on real failure events |
 

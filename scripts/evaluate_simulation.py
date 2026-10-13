@@ -33,31 +33,14 @@ from sklearn.model_selection import StratifiedKFold
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 warnings.filterwarnings("ignore")
 
-from vercausa.causal import VARIANT_CODES, CausalLayer, training_frame
-from vercausa.detection import check_hdf, check_osf, check_pwf
+from vercausa.causal import CausalLayer, training_frame
+from vercausa.ground_truth import true_counterfactual, true_outcome
 from vercausa.kg import open_store
 from vercausa.readings import DEFAULT_CSV
 from vercausa.simulation import SimulationLayer
 
 MODES = ("HDF", "PWF", "OSF")
 QUANTILES = (0.05, 0.25, 0.5, 0.75, 0.95)
-CODE_TO_VARIANT = {v: k for k, v in VARIANT_CODES.items()}
-
-
-def true_counterfactual(obs: dict, signal: str, value: float) -> dict:
-    cf = dict(obs)
-    cf[signal] = value
-    if signal == "air_temperature":
-        cf["process_temperature"] = obs["process_temperature"] + (value - obs["air_temperature"])
-    return cf
-
-
-def true_outcome(mode: str, s: dict) -> bool:
-    if mode == "HDF":
-        return check_hdf(s["air_temperature"], s["process_temperature"], s["rotational_speed"])
-    if mode == "PWF":
-        return check_pwf(s["torque"], s["rotational_speed"])
-    return check_osf(s["tool_wear"], s["torque"], CODE_TO_VARIANT[int(s["product_variant"])])
 
 
 def main() -> None:
@@ -90,7 +73,7 @@ def main() -> None:
                 probs = causal.failure_probability(mode, cf_frame)
                 inside = causal.in_support(mode, cf_frame)
                 for (signal, v), p, ins in zip(grid, probs, inside):
-                    truth = true_outcome(mode, true_counterfactual(obs, signal, v))
+                    truth = true_outcome(mode, true_counterfactual(obs, {signal: v}))
                     pairs.append((mode, signal, bool(ins), truth, p >= 0.5))
 
     def report(label, subset):

@@ -175,6 +175,14 @@ fill in separately.
   `vercausa/reasoning.py` verifies every number/citation against graph facts
   and falls back to fact-built answers, so the LLM never adds unsupported numbers or
   citations (claims without numbers are not machine-checked).
+- ~~Action Layer design~~ — decided, see `vercausa/agents.py`. LangGraph
+  workflow diagnose → propose → simulate → rank (→ combine → simulate when no
+  easy action works). Agents are deterministic: candidates only on KG-permitted,
+  operator-changeable signals at observed operating levels; the SCM tests each
+  one; an action is recommended only if no mode stays at risk. "At risk" is
+  ≥1% per reading, not 50% — tool wear failure never exceeds ~7.6% per reading
+  even on a worn tool. Scored by `scripts/evaluate_actions.py` against
+  `vercausa/ground_truth.py` (the documented rules, never seen by the model).
 - Evaluation metrics beyond root-cause attribution accuracy (e.g., false-alarm rate,
   simulated OEE improvement) — the causal-vs-correlation benchmark paper cited in the
   literature review (arXiv:2512.01149) is a good template for how to structure this

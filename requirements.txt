@@ -13,3 +13,6 @@ uvicorn==0.39.0
 httpx==0.28.1
 paho-mqtt==2.1.0
 mqttools==0.50.0
+langgraph==0.6.11
+# urllib3 2.x warns on macOS's LibreSSL-based Python 3.9.
+urllib3==1.26.20

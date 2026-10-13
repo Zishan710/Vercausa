@@ -1,8 +1,10 @@
 import json
 import warnings
 
+import pandas as pd
 import pytest
 
+from vercausa.agents import ActionAgents, operating_levels
 from vercausa.causal import CausalLayer, training_frame
 from vercausa.explain import typical_values
 from vercausa.kg import InMemoryGraphStore
@@ -26,7 +28,9 @@ def retriever():
     for r in readings:
         twin.ingest(r)
     causal = CausalLayer.fit_from_store(store, training_frame(DEFAULT_CSV))
-    return GraphRetriever(store, causal, SimulationLayer(causal), typical_values(readings), "MILL-01")
+    sim, typical = SimulationLayer(causal), typical_values(readings)
+    agents = ActionAgents(causal, sim, typical, operating_levels(pd.DataFrame([r.values for r in readings])))
+    return GraphRetriever(store, causal, sim, typical, "MILL-01", agents)
 
 
 class ScriptedLLM:
@@ -163,3 +167,43 @@ def test_llm_fields_are_type_checked():
     got = understand("hmm", llm)
     assert got["row"] == 9975 and got["change_value"] == -20.0
     assert got["mechanism"] is None and got["signal"] is None and got["change_type"] is None
+
+
+@pytest.mark.parametrize("question, expected", [
+    ("What should I do about reading 9975?", {"intent": "recommend", "row": 9975}),
+    ("How do we fix the power failure?", {"intent": "recommend", "mechanism": "PWF"}),
+    ("What do you recommend right now?", {"intent": "recommend"}),
+    ("What if we replace the tool at reading 9975?", {"intent": "what_if"}),
+])
+def test_rules_read_recommend_questions(question, expected):
+    got = rule_intent(question)
+    for k, v in expected.items():
+        assert got.get(k) == v, (k, got)
+
+
+def test_recommend_facts_come_from_the_action_layer(retriever):
+    facts = retriever.retrieve({"intent": "recommend", "row": 51, "mechanism": None}).items
+    plan = [f for f in facts if f.source.startswith("Action Layer")]
+    assert plan[0].text.startswith("The Action Layer's agents tested")
+    assert plan[1].text.startswith("Recommended action 1: Increase the cutting load")
+    ans = GraphRAG(retriever, None).generate("What should I do about reading 51?",
+                                             {"intent": "recommend"}, facts)
+    assert "Recommended action 1" in ans.text and verify(ans.text, facts) == []
+
+
+def test_recommend_for_live_state_reports_no_action_when_healthy(retriever):
+    facts = retriever.retrieve({"intent": "recommend", "row": None, "mechanism": None}).items
+    assert facts[0].text.startswith("Machine MILL-01 status is")
+    assert any("no action is needed" in f.text or f.text.startswith("Recommended action") for f in facts)
+
+
+def test_asking_what_to_do_overrides_the_llm():
+    llm = ScriptedLLM(json.dumps({"intent": "current_state", "row": None, "mechanism": None, "signal": None,
+                                  "change_type": None, "change_value": None}))
+    assert understand("What should I do about reading 51?", llm)["intent"] == "recommend"
+
+
+def test_an_explicit_reading_wins_over_a_wrongly_inferred_failure_type(retriever):
+    # Reading 51 is a power failure; the LLM guessed tool wear.
+    facts = retriever.retrieve({"intent": "explain_event", "row": 51, "mechanism": "TWF"}).items
+    assert "reading 51" in facts[0].text and "Power Failure (PWF)" in facts[0].text

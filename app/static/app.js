@@ -23,7 +23,7 @@ const NODES = [
   ["causal", "Causal model", "root cause", "M3 12h9 M9 7l5 5-5 5 M18 5v14"],
   ["sim", "Simulation", "what-if", "M4 7h9 M17 7h3 M4 17h4 M12 17h8 M15 4.5v5 M10 14.5v5"],
   ["reason", "Reasoning", "GraphRAG", "M4 5h16v10H9l-5 4z"],
-  ["action", "Action", "AI agents · next", "M4 12.5l4.5 4.5L20 6"],
+  ["action", "Action", "AI agents", "M4 12.5l4.5 4.5L20 6"],
 ];
 
 let meta = null;
@@ -82,7 +82,7 @@ let dashOffset = 0;
 function buildPipeline() {
   const wrap = $("nodes");
   NODES.forEach(([key, name, sub, icon], i) => {
-    const n = el("div", "node" + (i >= 6 ? " future" : ""));
+    const n = el("div", "node");
     n.id = "node-" + key;
     const dot = el("div", "dot");
     const s = svgEl("svg", { viewBox: "0 0 24 24", "stroke-linecap": "round", "stroke-linejoin": "round" });
@@ -134,14 +134,14 @@ function flowLoop(now) {
 
   dashOffset -= dt * 22;
   for (let i = 0; i < pts.length - 1; i++) {
-    const a = pts[i], b = pts[i + 1], future = i >= 5;
+    const a = pts[i], b = pts[i + 1];
     const g = ctx.createLinearGradient(a.x, 0, b.x, 0);
-    g.addColorStop(0, future ? "rgba(125,160,255,0.12)" : "rgba(47,217,244,0.35)");
-    g.addColorStop(1, future ? "rgba(125,160,255,0.08)" : "rgba(139,123,255,0.35)");
+    g.addColorStop(0, "rgba(47,217,244,0.35)");
+    g.addColorStop(1, "rgba(139,123,255,0.35)");
     ctx.strokeStyle = g;
     ctx.lineWidth = 2;
-    ctx.setLineDash(future ? [3, 7] : [8, 10]);
-    ctx.lineDashOffset = future ? 0 : dashOffset;
+    ctx.setLineDash([8, 10]);
+    ctx.lineDashOffset = dashOffset;
     ctx.beginPath(); ctx.moveTo(a.x + 22, a.y); ctx.lineTo(b.x - 22, b.y); ctx.stroke();
   }
   ctx.setLineDash([]);
@@ -498,16 +498,38 @@ function drawPath(e) {
   box(colX[2], modeY, 132, { TWF: "Tool wear failure", HDF: "Heat failure", PWF: "Power failure", OSF: "Overstrain failure" }[e.mechanism], "mode");
 }
 
-function quickActions(e) {
-  const v = e.values, acts = [];
-  const causes = e.causes.map((c) => c.signal);
-  if (causes.includes("torque")) {
-    if (e.derived.power < meta.thresholds.power_min) acts.push(["Increase torque 20%", { torque: v.torque * 1.2 }]);
-    else acts.push(["Reduce torque 20%", { torque: v.torque * 0.8 }]);
+async function loadPlan(e) {
+  const box = $("d-plan");
+  box.replaceChildren(el("p", "hint-text", "The agents are planning: diagnose → propose → simulate → rank…"));
+  let plan;
+  try { plan = await post("/api/recommend", { event_id: e.id }); }
+  catch (err) { box.replaceChildren(el("p", "bad", err.message)); return; }
+  if (openEvent !== e) return;
+  pulse(4, 6, "sim");
+  const parts = [];
+  if (!plan.recommendations.length) {
+    parts.push(el("p", "plan-note", `None of the ${plan.considered} actions the agents tested clears every failure risk in simulation.`));
   }
-  if (causes.includes("tool_wear")) acts.push(["Replace the tool", { tool_wear: 0 }]);
-  if (causes.includes("rotational_speed") && e.mechanism === "HDF") acts.push(["Raise speed to 1,500 rpm", { rotational_speed: 1500 }]);
-  return acts;
+  plan.recommendations.forEach((a, i) => {
+    const card = el("div", "rec" + (i === 0 ? " first" : ""));
+    card.style.animationDelay = `${i * 0.08}s`;
+    const why = el("ul", "rec-why");
+    for (const r of a.reasons) why.append(el("li", r.startsWith("Low confidence") ? "warn" : null, r));
+    const tryIt = el("button", "btn glow", "Try in what-if");
+    tryIt.type = "button";
+    tryIt.onclick = () => setSliders(e, a.interventions);
+    card.append(el("div", "rec-rank", String(a.rank)), el("div", "rec-title", a.title), tryIt, why);
+    parts.push(card);
+  });
+  const extra = plan.more_that_work ? ` ${plan.more_that_work} more variations also work.` : "";
+  parts.push(el("p", "plan-note", `${plan.considered} candidate actions tested; ${plan.rejected.length} rejected because a failure mode would still be at risk.${extra}`));
+  const trace = el("details", "plan-trace");
+  trace.append(el("summary", null, "How the agents decided"));
+  const ol = el("ol");
+  for (const t of plan.trace) ol.append(el("li", null, t));
+  trace.append(ol);
+  parts.push(trace);
+  box.replaceChildren(...parts);
 }
 
 let simTimer = null;
@@ -641,17 +663,13 @@ function openDrawer(e) {
 
   const acts = $("d-actions");
   acts.replaceChildren();
-  for (const [label, values] of quickActions(e)) {
-    const b = el("button", "btn glow", label);
-    b.addEventListener("click", () => setSliders(e, values));
-    acts.append(b);
-  }
   const back = el("button", "btn", "Undo changes");
   back.addEventListener("click", () => setSliders(e, {}));
   acts.append(back);
 
   buildSliders(e);
   runSim(e);
+  loadPlan(e);
   $("drawer").hidden = false;
   $("scrim").hidden = false;
   pulse(2, 3, "bad");
@@ -666,7 +684,7 @@ function closeDrawer() {
 /* ---------- Ask Vercausa (GraphRAG) ---------- */
 
 const SOURCE_NOTE = {
-  llm: ["good", "✓ Verified: every number and claim checked against the knowledge graph"],
+  llm: ["good", "✓ Verified: every number and citation checked against the knowledge graph"],
   template: ["warn", "Answered directly from graph facts (the LLM's wording was rejected or unavailable)"],
 };
 
@@ -679,8 +697,9 @@ function suggestions() {
     const fix = { PWF: lowPower ? "torque was increased by 20%" : "torque was reduced by 20%", OSF: "we replace the tool",
                   TWF: "we replace the tool", HDF: "speed was raised to 1500 rpm" }[latest.mechanism];
     qs.push(`What if ${fix} at reading ${latest.row}?`);
+    qs.push(`What should I do about reading ${latest.row}?`);
   }
-  qs.push("How is the machine doing right now?", "Which failures happened so far?");
+  qs.push("How is the machine doing right now?", "What should I do right now?", "Which failures happened so far?");
   return qs;
 }
 
