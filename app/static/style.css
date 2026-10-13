@@ -117,6 +117,19 @@ body.alarm .bg-glow.b { background: radial-gradient(circle, #ff2d4a 0%, transpar
 .status.running .light { animation: breathe 2.2s ease-in-out infinite; }
 .status.alert { color: #ffd6db; background: rgba(255,77,97,0.16); border-color: rgba(255,77,97,0.6); box-shadow: 0 0 24px -4px rgba(255,77,97,0.6); }
 .status.alert .light { color: var(--red); animation: alarm 0.8s ease-in-out infinite; }
+.status.offline { color: #c3ccdb; background: rgba(135,151,177,0.12); border-color: rgba(135,151,177,0.45); }
+
+.source-badge { display: flex; align-items: center; gap: 10px; font-size: 12.5px; font-weight: 600; padding: 7px 14px; border-radius: 999px;
+  border: 1px solid var(--edge-strong); background: rgba(255,255,255,0.04); }
+.source-badge .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+.source-badge .mono { font-size: 11.5px; font-weight: 500; color: var(--muted); }
+.source-badge.live { border-color: rgba(53,224,161,0.45); color: var(--green); }
+.source-badge.live .dot { background: var(--green); box-shadow: 0 0 10px var(--green); animation: breathe 1.4s ease-in-out infinite; }
+.source-badge.waiting .dot { background: var(--amber); animation: breathe 1s ease-in-out infinite; }
+.source-badge.offline, .source-badge.broker-down { border-color: rgba(255,77,97,0.5); color: #ffb3bc; }
+.source-badge.offline .dot, .source-badge.broker-down .dot { background: var(--red); }
+.feed-note { margin: -4px 0 12px; padding: 9px 12px; border-radius: 10px; font-size: 12.5px; font-family: var(--mono);
+  color: #ffd99a; background: rgba(255,190,77,0.1); border: 1px solid rgba(255,190,77,0.4); animation: reveal 0.4s ease both; }
 @keyframes breathe { 50% { opacity: 0.45; } }
 @keyframes alarm { 50% { box-shadow: 0 0 2px var(--red), 0 0 0 7px rgba(255,77,97,0.2); } }
 

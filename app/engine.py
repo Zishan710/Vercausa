@@ -10,7 +10,9 @@ Simulation Layer, starting from the state the twin recorded at that moment
 from __future__ import annotations
 
 import math
+import time
 from collections import deque
+from dataclasses import replace
 
 import pandas as pd
 
@@ -103,7 +105,16 @@ def _derived(values: dict) -> dict:
 
 
 class ReplayEngine:
-    def __init__(self, store_factory, causal: CausalLayer, csv=DEFAULT_CSV, machine_id: str = DEFAULT_MACHINE):
+    """Feeds readings into the twin and explains failures.
+
+    mode="replay": the engine reads AI4I itself, one row per tick.
+    mode="mqtt":   readings arrive from the network via ingest_external();
+                   the machine publisher controls the pace, and the engine
+                   reports the machine offline when messages stop.
+    """
+
+    def __init__(self, store_factory, causal: CausalLayer, csv=DEFAULT_CSV, machine_id: str = DEFAULT_MACHINE,
+                 mode: str = "replay", clock=time.monotonic, offline_after: float = 5.0):
         self.store_factory = store_factory
         self.causal = causal
         self.sim = SimulationLayer(causal)
@@ -113,6 +124,10 @@ class ReplayEngine:
             for s in SENSOR_SIGNALS
         }
         self.machine_id = machine_id
+        self.mode = mode
+        self.clock = clock
+        self.offline_after = offline_after
+        self.broker_connected = False
         self.version = 0
         self.speed = 2.0
         self.pause_on_failure = True
@@ -131,19 +146,60 @@ class ReplayEngine:
         self.history: deque = deque(maxlen=HISTORY)
         self.last_reading: SensorReading | None = None
         self.last_new_events: list = []
+        self.received = 0
+        self.rejected = 0
+        self.last_rejection: str | None = None
+        self.last_message_at: float | None = None
+        self._seq = 0
         self.version += 1
 
     @property
     def finished(self) -> bool:
-        return self.position >= len(self.readings)
+        return self.mode == "replay" and self.position >= len(self.readings)
 
     def step(self) -> list:
-        """Ingest the next reading. Returns the failure events it opened."""
+        """Ingest the next replayed reading. Returns the failure events it opened."""
         if self.finished:
             self.playing = False
             return []
         reading = self.readings[self.position]
         self.position += 1
+        return self._ingest(reading)
+
+    # ---------- live (MQTT) input ----------
+
+    def ingest_external(self, reading: SensorReading) -> list:
+        """Ingest a reading that arrived over the network."""
+        if reading.machine_id != self.machine_id:
+            self.reject(f"unknown machine '{reading.machine_id}' (monitoring {self.machine_id})")
+            return []
+        self._seq += 1
+        if reading.source_row <= 0:
+            reading = replace(reading, source_row=self._seq)
+        self.received += 1
+        self.position += 1
+        self.last_message_at = self.clock()
+        return self._ingest(reading)
+
+    def reject(self, reason: str, topic: str = "") -> None:
+        self.rejected += 1
+        self.last_rejection = reason
+        self.version += 1
+
+    def set_broker_connected(self, connected: bool) -> None:
+        self.broker_connected = connected
+        self.version += 1
+
+    def link_state(self) -> str | None:
+        if self.mode != "mqtt":
+            return None
+        if not self.broker_connected:
+            return "broker-down"
+        if self.last_message_at is None:
+            return "waiting"
+        return "offline" if self.clock() - self.last_message_at > self.offline_after else "live"
+
+    def _ingest(self, reading: SensorReading) -> list:
         result = self.twin.ingest(reading)
         self.last_reading = reading
         d = _derived(reading.values)
@@ -248,14 +304,24 @@ class ReplayEngine:
                 "derived": _derived(r.values),
                 "risk": self.risks(r.values, r.product_variant),
             }
+        link = self.link_state()
+        since = None if self.last_message_at is None else round(self.clock() - self.last_message_at, 1)
         return {
             "version": self.version,
             "playing": self.playing,
             "speed": self.speed,
             "pause_on_failure": self.pause_on_failure,
             "position": self.position,
-            "total": len(self.readings),
-            "status": machine["status"],
+            "total": len(self.readings) if self.mode == "replay" else None,
+            "source": {
+                "mode": self.mode,
+                "link": link,
+                "received": self.received,
+                "rejected": self.rejected,
+                "last_rejection": self.last_rejection,
+                "seconds_since_last": since,
+            },
+            "status": "offline" if link in ("offline", "broker-down") and r is not None else machine["status"],
             "active_alerts": machine["active_alerts"],
             "live": live,
             "history": list(self.history),

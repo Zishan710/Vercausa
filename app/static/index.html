@@ -25,18 +25,19 @@
   <div class="feed">
     <div class="feed-item"><span class="k">Machine</span><span class="v" id="machine">MILL-01</span></div>
     <div class="feed-item"><span class="k">Feed time</span><span class="v mono" id="clock">—</span></div>
-    <div class="feed-item wide"><span class="k">Reading <b id="position" class="mono">0 / 10,000</b></span><div class="progress"><div id="progress-fill"></div></div></div>
+    <div class="feed-item wide"><span class="k">Reading <b id="position" class="mono">0 / 10,000</b></span><div class="progress" id="progress"><div id="progress-fill"></div></div></div>
   </div>
   <div class="controls">
-    <button id="play" class="btn primary">▶ Play</button>
-    <button id="next" class="btn glow">⏭ Jump to next failure</button>
-    <label class="speed">Speed
+    <div id="source-badge" class="source-badge" hidden><span class="dot"></span><span id="source-text">LIVE · MQTT</span><span id="source-counts" class="mono"></span></div>
+    <button id="play" class="btn primary replay-only">▶ Play</button>
+    <button id="next" class="btn glow replay-only">⏭ Jump to next failure</button>
+    <label class="speed replay-only">Speed
       <select id="speed">
         <option value="1">1×</option><option value="2">2×</option><option value="5">5×</option>
         <option value="10">10×</option><option value="25">25×</option>
       </select>
     </label>
-    <label class="toggle"><input type="checkbox" id="autopause" checked> Pause on failure</label>
+    <label class="toggle replay-only"><input type="checkbox" id="autopause" checked> Pause on failure</label>
     <button id="reset" class="btn">↺ Reset</button>
   </div>
 </header>
@@ -52,6 +53,7 @@
       <h2>Machine state <span class="tag">digital twin · live</span></h2>
       <div id="status" class="status idle"><span class="light"></span><span id="status-text">Waiting for data</span></div>
     </div>
+    <div id="feed-note" class="feed-note" hidden></div>
     <div class="machine-body">
       <div class="rig" id="rig">
         <svg viewBox="0 0 200 200" aria-label="Milling cutter">
@@ -86,7 +88,7 @@
       <div class="chart-head"><span>Power over the last 90 readings</span><span>green band = safe range</span></div>
       <canvas id="spark"></canvas>
     </div>
-    <div id="empty" class="empty"><div class="pulse-ring"></div><div>Press <strong>Play</strong> to start the machine feed,<br>or <strong>Jump to next failure</strong>.</div></div>
+    <div id="empty" class="empty"><div class="pulse-ring"></div><div id="empty-text">Press <strong>Play</strong> to start the machine feed,<br>or <strong>Jump to next failure</strong>.</div></div>
   </section>
 
   <section class="side">

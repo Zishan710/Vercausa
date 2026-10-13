@@ -1,14 +1,18 @@
 """Vercausa live demo dashboard.
 
-    python -m app.server            # then open http://127.0.0.1:8000
+    python -m app.server                  # replay AI4I inside the server
+    python -m app.server --source mqtt    # live: readings arrive over MQTT
+    python scripts/publish_machine.py     # (second terminal) the machine
 
 Loads the trained model from models/causal_layer.joblib (training it first
-if it is missing), replays AI4I 2020 as a live machine feed, and streams
-every update to the browser.
+if it is missing) and streams every update to the browser. In MQTT mode the
+server runs the bundled broker on 127.0.0.1:1883 unless --no-broker is given,
+or a broker such as Mosquitto is already running, in which case it uses that.
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import contextlib
 import json
@@ -27,6 +31,7 @@ from app.engine import ReplayEngine, json_safe
 from vercausa.causal import CausalLayer, training_frame
 from vercausa.kg import open_store
 from vercausa.readings import DEFAULT_CSV
+from vercausa.streaming import DEFAULT_HOST, DEFAULT_PORT, Subscriber, broker_running, serve_broker
 
 warnings.filterwarnings("ignore")
 
@@ -58,13 +63,21 @@ def load_model() -> CausalLayer:
     return layer
 
 
-def create_app(engine: ReplayEngine | None = None) -> FastAPI:
-    state = {"engine": engine}
+def create_app(engine: ReplayEngine | None = None, source: str = "replay",
+               broker: tuple = (DEFAULT_HOST, DEFAULT_PORT), run_broker: bool = True, qos: int = 0) -> FastAPI:
+    state = {"engine": engine, "broker": None}
 
     async def player() -> None:
+        last_link = None
         while True:
             eng = state["engine"]
-            if eng.playing and not eng.finished:
+            if eng.mode == "mqtt":
+                link = eng.link_state()
+                if link != last_link:
+                    last_link = link
+                    eng.version += 1
+                await asyncio.sleep(0.25)
+            elif eng.playing and not eng.finished:
                 new = eng.step()
                 if new and eng.pause_on_failure:
                     eng.playing = False
@@ -75,10 +88,31 @@ def create_app(engine: ReplayEngine | None = None) -> FastAPI:
     @contextlib.asynccontextmanager
     async def lifespan(_app):
         if state["engine"] is None:
-            state["engine"] = ReplayEngine(open_store, load_model())
-        task = asyncio.create_task(player())
+            state["engine"] = ReplayEngine(open_store, load_model(), mode=source)
+        eng = state["engine"]
+        tasks = [asyncio.create_task(player())]
+        subscriber = None
+        if eng.mode == "mqtt":
+            if run_broker and not broker_running(*broker):
+                tasks.append(asyncio.create_task(serve_broker(*broker)))
+                state["broker"] = "bundled"
+                await asyncio.sleep(0.3)
+            else:
+                state["broker"] = "external"
+            print(f"MQTT: using the {state['broker']} broker at {broker[0]}:{broker[1]} (QoS {qos})")
+            loop = asyncio.get_running_loop()
+            subscriber = Subscriber(
+                "vercausa-server",
+                on_reading=lambda r: loop.call_soon_threadsafe(eng.ingest_external, r),
+                on_reject=lambda reason, topic: loop.call_soon_threadsafe(eng.reject, reason, topic),
+                on_link=lambda ok: loop.call_soon_threadsafe(eng.set_broker_connected, ok),
+                host=broker[0], port=broker[1], qos=qos,
+            )
         yield
-        task.cancel()
+        if subscriber:
+            subscriber.close()
+        for t in tasks:
+            t.cancel()
 
     app = FastAPI(title="Vercausa Live Monitor", lifespan=lifespan)
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
@@ -121,6 +155,8 @@ def create_app(engine: ReplayEngine | None = None) -> FastAPI:
     @app.post("/api/control")
     async def control(c: Control):
         eng = state["engine"]
+        if eng.mode == "mqtt" and c.action != "reset":
+            raise HTTPException(409, "In MQTT mode the machine publisher controls the pace; only Reset is available.")
         if c.action == "play":
             eng.playing = not eng.finished
         elif c.action == "pause":
@@ -159,10 +195,25 @@ app = create_app()
 
 
 def main() -> None:
-    url = "http://127.0.0.1:8000"
+    parser = argparse.ArgumentParser(description="Vercausa live monitor")
+    parser.add_argument("--source", choices=("replay", "mqtt"), default="replay",
+                        help="replay the dataset in-process, or receive readings over MQTT")
+    parser.add_argument("--broker", default=f"{DEFAULT_HOST}:{DEFAULT_PORT}", help="MQTT broker host:port")
+    parser.add_argument("--no-broker", action="store_true",
+                        help="never start the bundled broker (a running Mosquitto is used automatically anyway)")
+    parser.add_argument("--qos", type=int, choices=(0, 1), default=0, help="1 needs Mosquitto or another full broker")
+    parser.add_argument("--port", type=int, default=8000, help="dashboard port")
+    args = parser.parse_args()
+    host, _, port = args.broker.rpartition(":")
+
+    url = f"http://127.0.0.1:{args.port}"
     print(f"Vercausa Live Monitor starting at {url}  (Ctrl+C to stop)")
+    if args.source == "mqtt":
+        print(f"Listening for machine readings on mqtt://{host}:{port}, topic vercausa/+/readings")
+        print("Start the machine in another terminal:  python scripts/publish_machine.py")
     webbrowser.open(url)
-    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")
+    uvicorn.run(create_app(source=args.source, broker=(host, int(port)), run_broker=not args.no_broker, qos=args.qos),
+                host="127.0.0.1", port=args.port, log_level="warning")
 
 
 if __name__ == "__main__":

@@ -190,7 +190,11 @@ function updateRig(live, alert) {
   const rig = $("rig");
   rig.classList.toggle("on", !!live);
   rig.classList.toggle("fault", !!alert);
-  if (!live) { $("rig-rpm").textContent = "—"; $("rig-wear").textContent = "—"; return; }
+  if (!live) {
+    $("rig-rpm").textContent = "—"; $("rig-wear").textContent = "—";
+    $("teeth").querySelectorAll("path").forEach((p) => p.setAttribute("fill", "#56657f"));
+    return;
+  }
   const rpm = live.values.rotational_speed;
   const spin = clamp((1.4 * 1500) / rpm, 0.35, 3);
   if (Math.abs(spin - lastSpin) / (lastSpin || 1) > 0.05) { $("cutter").style.setProperty("--spin", spin.toFixed(2) + "s"); lastSpin = spin; }
@@ -371,26 +375,65 @@ function updateAlerts(events) {
 
 /* ---------- main render ---------- */
 
+const LINK_LABEL = {
+  live: "LIVE · MQTT",
+  waiting: "MQTT · waiting for the machine",
+  offline: "MQTT · machine offline",
+  "broker-down": "MQTT · broker unreachable",
+};
+let lastRejected = 0;
+
+function updateSource(s) {
+  const mqtt = s.source.mode === "mqtt";
+  document.querySelectorAll(".replay-only").forEach((e) => { e.hidden = mqtt; });
+  $("source-badge").hidden = !mqtt;
+  $("progress").hidden = mqtt;
+  $("node-feed").querySelector(".sb").textContent = mqtt ? "MQTT stream" : "sensor stream";
+  if (!mqtt) return;
+  $("source-badge").className = "source-badge " + s.source.link;
+  $("source-text").textContent = LINK_LABEL[s.source.link];
+  $("source-counts").textContent = `${s.source.received.toLocaleString("en-IN")} received · ${s.source.rejected} rejected`;
+  if (s.source.rejected > lastRejected && s.source.last_rejection) {
+    const note = $("feed-note");
+    note.textContent = "✗ Rejected a reading from the machine: " + s.source.last_rejection;
+    note.hidden = false;
+    clearTimeout(note._t);
+    note._t = setTimeout(() => { note.hidden = true; }, 6000);
+  }
+  lastRejected = s.source.rejected;
+}
+
 function render(s) {
   state = s;
   const live = s.live;
+  const mqtt = s.source.mode === "mqtt";
+  const offline = !!live && s.status === "offline";
   const alert = !!live && s.status === "alert";
+  updateSource(s);
   $("empty").hidden = !!live;
+  $("empty-text").replaceChildren(...(mqtt
+    ? [document.createTextNode("Waiting for the machine to send data over MQTT."), el("br"),
+       document.createTextNode("Start it with "), el("strong", null, "python scripts/publish_machine.py")]
+    : [document.createTextNode("Press "), el("strong", null, "Play"), document.createTextNode(" to start the machine feed,"), el("br"),
+       document.createTextNode("or "), el("strong", null, "Jump to next failure"), document.createTextNode(".")]));
   $("clock").textContent = live ? time(live.timestamp) : "—";
-  $("position").textContent = `${s.position.toLocaleString("en-IN")} / ${s.total.toLocaleString("en-IN")}`;
-  $("progress-fill").style.width = (s.position / s.total) * 100 + "%";
+  $("position").textContent = mqtt
+    ? `${s.position.toLocaleString("en-IN")} received`
+    : `${s.position.toLocaleString("en-IN")} / ${s.total.toLocaleString("en-IN")}`;
+  if (!mqtt) $("progress-fill").style.width = (s.position / s.total) * 100 + "%";
   $("play").textContent = s.playing ? "❚❚ Pause" : "▶ Play";
   $("speed").value = String(s.speed);
   $("autopause").checked = s.pause_on_failure;
   document.body.classList.toggle("alarm", alert);
 
   const st = $("status");
-  st.className = "status " + (!live ? "idle" : alert ? "alert" : "running");
-  $("status-text").textContent = !live ? "Waiting for data" : alert
-    ? "ALERT · " + s.active_alerts.map((m) => MODE_NAMES[m]).join(" + ")
+  st.className = "status " + (!live ? "idle" : offline ? "offline" : alert ? "alert" : "running");
+  $("status-text").textContent = !live ? "Waiting for data" : offline
+    ? "OFFLINE · no data from the machine"
+    : alert ? "ALERT · " + s.active_alerts.map((m) => MODE_NAMES[m]).join(" + ")
     : "Running normally";
 
-  updateRig(live, alert);
+  updateRig(offline ? null : live, alert);
   updateGauges(live ? live.values : null);
   updateMeter("meter-power", live ? live.derived.power : null);
   updateMeter("meter-tdiff", live ? live.derived.temperature_difference : null);
@@ -633,7 +676,7 @@ async function init() {
   buildRisks();
   $("play").onclick = () => control(state && state.playing ? "pause" : "play");
   $("next").onclick = () => control("next_failure");
-  $("reset").onclick = () => { seen = new Set(); rendered = new Set(); lastPosition = 0; closeDrawer(); $("toast").hidden = true; control("reset"); };
+  $("reset").onclick = () => { seen = new Set(); rendered = new Set(); lastPosition = 0; lastRejected = 0; closeDrawer(); $("toast").hidden = true; control("reset"); };
   $("speed").onchange = (ev) => control("speed", Number(ev.target.value));
   $("autopause").onchange = (ev) => control("pause_on_failure", ev.target.checked ? 1 : 0);
   $("d-close").onclick = closeDrawer;
