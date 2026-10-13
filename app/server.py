@@ -31,6 +31,7 @@ from app.engine import ReplayEngine, json_safe
 from vercausa.causal import CausalLayer, training_frame
 from vercausa.kg import open_store
 from vercausa.readings import DEFAULT_CSV
+from vercausa.reasoning import HELP, Answer, GraphRAG, GraphRetriever, OllamaLLM
 from vercausa.streaming import DEFAULT_HOST, DEFAULT_PORT, Subscriber, broker_running, serve_broker
 
 warnings.filterwarnings("ignore")
@@ -51,6 +52,10 @@ class WhatIf(BaseModel):
     interventions: dict
 
 
+class Question(BaseModel):
+    question: str
+
+
 def load_model() -> CausalLayer:
     if MODEL.exists():
         return CausalLayer.load(MODEL)
@@ -64,8 +69,17 @@ def load_model() -> CausalLayer:
 
 
 def create_app(engine: ReplayEngine | None = None, source: str = "replay",
-               broker: tuple = (DEFAULT_HOST, DEFAULT_PORT), run_broker: bool = True, qos: int = 0) -> FastAPI:
-    state = {"engine": engine, "broker": None}
+               broker: tuple = (DEFAULT_HOST, DEFAULT_PORT), run_broker: bool = True, qos: int = 0,
+               llm=None) -> FastAPI:
+    state = {"engine": engine, "broker": None, "llm": llm, "llm_ok": False}
+
+    async def llm_ready() -> bool:
+        """Re-checks until the local model answers, so starting Ollama after the dashboard works."""
+        if state["llm"] is None:
+            state["llm"] = OllamaLLM()
+        if not state["llm_ok"]:
+            state["llm_ok"] = await asyncio.to_thread(state["llm"].available)
+        return state["llm_ok"]
 
     async def player() -> None:
         last_link = None
@@ -90,6 +104,8 @@ def create_app(engine: ReplayEngine | None = None, source: str = "replay",
         if state["engine"] is None:
             state["engine"] = ReplayEngine(open_store, load_model(), mode=source)
         eng = state["engine"]
+        await llm_ready()
+        print(f"Reasoning: {'local LLM ' + state['llm'].model if state['llm_ok'] else 'no LLM found -- answers built from graph facts only'}")
         tasks = [asyncio.create_task(player())]
         subscriber = None
         if eng.mode == "mqtt":
@@ -132,7 +148,8 @@ def create_app(engine: ReplayEngine | None = None, source: str = "replay",
 
     @app.get("/api/meta")
     async def meta():
-        return state["engine"].meta()
+        ok = await llm_ready()
+        return dict(state["engine"].meta(), llm={"available": ok, "model": getattr(state["llm"], "model", None)})
 
     @app.get("/api/state")
     async def get_state():
@@ -177,6 +194,22 @@ def create_app(engine: ReplayEngine | None = None, source: str = "replay",
             raise HTTPException(400, f"Unknown control '{c.action}' or value {c.value}")
         eng.version += 1
         return {"ok": True}
+
+    @app.post("/api/ask")
+    async def ask(q: Question):
+        question = q.question.strip()
+        if not question:
+            raise HTTPException(400, "Type a question first.")
+        eng = state["engine"]
+        await llm_ready()
+        rag = GraphRAG(GraphRetriever(eng.store, eng.causal, eng.sim, eng.typical, eng.machine_id),
+                       state["llm"] if state["llm_ok"] else None)
+        intent = await asyncio.to_thread(rag.understand, question)
+        if intent["intent"] == "unsupported":
+            return Answer(question, intent, HELP, [], "help").to_dict()
+        facts = rag.retrieve(intent)
+        answer = await asyncio.to_thread(rag.generate, question, intent, facts)
+        return json_safe(answer.to_dict())
 
     @app.post("/api/simulate")
     async def simulate(w: WhatIf):

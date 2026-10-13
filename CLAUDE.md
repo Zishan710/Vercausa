@@ -170,7 +170,10 @@ fill in separately.
   Without them the SCM learns correlational shortcuts and gives wrong
   what-if answers (measured in Phase 4).
 - Team role split for the three-person group (not yet discussed with Claude)
-- Whether GraphRAG runs against a local LLM or an API-based one
+- ~~Whether GraphRAG runs against a local LLM or an API-based one~~ — decided:
+  local, Ollama `qwen2.5:7b-instruct` (no API cost; fine for college demos).
+  `vercausa/reasoning.py` verifies every number/citation against graph facts
+  and falls back to fact-built answers, so the LLM never adds unsupported claims.
 - Evaluation metrics beyond root-cause attribution accuracy (e.g., false-alarm rate,
   simulated OEE improvement) — the causal-vs-correlation benchmark paper cited in the
   literature review (arXiv:2512.01149) is a good template for how to structure this

@@ -100,3 +100,34 @@ def test_api_controls_and_simulate(engine):
     assert client.post("/api/simulate", json={"event_id": "nope", "interventions": {}}).status_code == 404
     assert client.post("/api/control", json={"action": "fly"}).status_code == 400
     assert client.get("/").status_code == 200
+
+
+class _ScriptedLLM:
+    model = "scripted"
+
+    def __init__(self, *replies):
+        self.replies = list(replies)
+
+    def available(self):
+        return True
+
+    def chat(self, system, user, schema=None):
+        return self.replies.pop(0)
+
+
+def test_api_ask_answers_from_graph_facts(engine):
+    import json as _json
+    engine.next_failure()
+    intent = _json.dumps({"intent": "explain_event", "row": 51, "mechanism": None, "signal": None,
+                          "change_type": None, "change_value": None})
+    llm = _ScriptedLLM(intent, "Power fell to 1,378 W because torque dropped to 4.6 Nm [F3][F6].",
+                       _json.dumps({"intent": "unsupported", "row": None, "mechanism": None, "signal": None,
+                                    "change_type": None, "change_value": None}))
+    with TestClient(create_app(engine, llm=llm)) as client:
+        meta = client.get("/api/meta").json()
+        assert meta["llm"] == {"available": True, "model": "scripted"}
+        a = client.post("/api/ask", json={"question": "Why did the machine fail at reading 51?"}).json()
+        assert a["source"] == "llm" and a["facts"] and "1,378 W" in a["text"]
+        h = client.post("/api/ask", json={"question": "Sing me a song"}).json()
+        assert h["source"] == "help"
+        assert client.post("/api/ask", json={"question": "  "}).status_code == 400

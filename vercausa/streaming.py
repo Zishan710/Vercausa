@@ -76,8 +76,11 @@ def decode_reading(topic: str, payload: bytes) -> SensorReading:
     machine_id = msg["machine_id"]
     if topic != TOPIC.format(machine_id=machine_id):
         raise MessageError(f"machine_id '{machine_id}' does not match topic '{topic}'")
+    timestamp = msg["timestamp"]
+    if isinstance(timestamp, str) and timestamp.endswith(("Z", "z")):
+        timestamp = timestamp[:-1] + "+00:00"
     try:
-        datetime.fromisoformat(msg["timestamp"])
+        datetime.fromisoformat(timestamp)
     except (TypeError, ValueError):
         raise MessageError(f"timestamp '{msg['timestamp']}' is not ISO 8601")
     if msg["product_variant"] not in VARIANTS:
@@ -101,7 +104,7 @@ def decode_reading(topic: str, payload: bytes) -> SensorReading:
     row = msg.get("source_row", 0)
     if isinstance(row, bool) or not isinstance(row, int) or row < 0:
         raise MessageError("'source_row' must be a non-negative integer")
-    return SensorReading(machine_id, msg["timestamp"], msg["product_variant"], values, row)
+    return SensorReading(machine_id, timestamp, msg["product_variant"], values, row)
 
 
 def _client(client_id: str) -> mqtt.Client:

@@ -22,7 +22,7 @@ const NODES = [
   ["kg", "Knowledge Graph", "digital twin", "M6 6.5a1.5 1.5 0 1 0 0 .01 M18 6.5a1.5 1.5 0 1 0 0 .01 M12 18a1.5 1.5 0 1 0 0 .01 M7 7.5l4 9 M17 7.5l-4 9 M7.5 6.5h9"],
   ["causal", "Causal model", "root cause", "M3 12h9 M9 7l5 5-5 5 M18 5v14"],
   ["sim", "Simulation", "what-if", "M4 7h9 M17 7h3 M4 17h4 M12 17h8 M15 4.5v5 M10 14.5v5"],
-  ["reason", "Reasoning", "GraphRAG · next", "M4 5h16v10H9l-5 4z"],
+  ["reason", "Reasoning", "GraphRAG", "M4 5h16v10H9l-5 4z"],
   ["action", "Action", "AI agents · next", "M4 12.5l4.5 4.5L20 6"],
 ];
 
@@ -82,7 +82,7 @@ let dashOffset = 0;
 function buildPipeline() {
   const wrap = $("nodes");
   NODES.forEach(([key, name, sub, icon], i) => {
-    const n = el("div", "node" + (i >= 5 ? " future" : ""));
+    const n = el("div", "node" + (i >= 6 ? " future" : ""));
     n.id = "node-" + key;
     const dot = el("div", "dot");
     const s = svgEl("svg", { viewBox: "0 0 24 24", "stroke-linecap": "round", "stroke-linejoin": "round" });
@@ -134,7 +134,7 @@ function flowLoop(now) {
 
   dashOffset -= dt * 22;
   for (let i = 0; i < pts.length - 1; i++) {
-    const a = pts[i], b = pts[i + 1], future = i >= 4;
+    const a = pts[i], b = pts[i + 1], future = i >= 5;
     const g = ctx.createLinearGradient(a.x, 0, b.x, 0);
     g.addColorStop(0, future ? "rgba(125,160,255,0.12)" : "rgba(47,217,244,0.35)");
     g.addColorStop(1, future ? "rgba(125,160,255,0.08)" : "rgba(139,123,255,0.35)");
@@ -440,6 +440,7 @@ function render(s) {
   drawSpark(s.history);
   updateRisks(live ? live.risk : null);
   updateAlerts(s.events);
+  renderSuggestions();
 
   const fresh = s.new_event_ids.filter((id) => !seen.has(id));
   if (s.position > lastPosition) pulse(0, 3, fresh.length ? "bad" : "normal");
@@ -662,12 +663,105 @@ function closeDrawer() {
   $("scrim").hidden = true;
 }
 
+/* ---------- Ask Vercausa (GraphRAG) ---------- */
+
+const SOURCE_NOTE = {
+  llm: ["good", "✓ Verified: every number and claim checked against the knowledge graph"],
+  template: ["warn", "Answered directly from graph facts (the LLM's wording was rejected or unavailable)"],
+};
+
+function suggestions() {
+  const qs = [];
+  const latest = state && state.events[0];
+  if (latest) {
+    qs.push(`Why did the machine fail at reading ${latest.row}?`);
+    const lowPower = latest.derived.power < meta.thresholds.power_min;
+    const fix = { PWF: lowPower ? "torque was increased by 20%" : "torque was reduced by 20%", OSF: "we replace the tool",
+                  TWF: "we replace the tool", HDF: "speed was raised to 1500 rpm" }[latest.mechanism];
+    qs.push(`What if ${fix} at reading ${latest.row}?`);
+  }
+  qs.push("How is the machine doing right now?", "Which failures happened so far?");
+  return qs;
+}
+
+function renderSuggestions() {
+  const wrap = $("ask-suggest");
+  const qs = suggestions();
+  if (wrap._qs === qs.join("|")) return;
+  wrap._qs = qs.join("|");
+  wrap.replaceChildren(...qs.map((q) => {
+    const b = el("button", "chip-q", q);
+    b.type = "button";
+    b.onclick = () => { $("ask-input").value = q; ask(q); };
+    return b;
+  }));
+}
+
+function renderAnswer(a) {
+  const box = $("ask-answer");
+  box.replaceChildren();
+  box.hidden = false;
+  box.append(el("div", "ask-q", a.question));
+  const text = el("div", "ask-text");
+  for (const part of a.text.split(/(\[F\d+\])/)) {
+    const m = part.match(/^\[(F\d+)\]$/);
+    if (m) {
+      const c = el("button", "cite", m[1]);
+      c.type = "button";
+      c.onclick = () => {
+        const det = box.querySelector("details");
+        det.open = true;
+        box.querySelectorAll(".fact").forEach((f) => f.classList.toggle("hit", f.dataset.id === m[1]));
+      };
+      text.append(c);
+    } else if (part) {
+      text.append(document.createTextNode(part));
+    }
+  }
+  box.append(text);
+  if (SOURCE_NOTE[a.source]) {
+    const [cls, msg] = SOURCE_NOTE[a.source];
+    box.append(el("div", "ask-note " + cls, msg));
+  }
+  if (a.facts.length) {
+    const det = el("details", "ask-facts");
+    det.append(el("summary", null, `Grounded in ${a.facts.length} facts from the knowledge graph`));
+    for (const f of a.facts) {
+      const row = el("div", "fact");
+      row.dataset.id = f.id;
+      row.append(el("span", "fact-id", f.id), el("span", "fact-text", f.text), el("span", "fact-src", f.source));
+      det.append(row);
+    }
+    box.append(det);
+  }
+}
+
+async function ask(question) {
+  question = question.trim();
+  if (!question) return;
+  const box = $("ask-answer");
+  box.hidden = false;
+  box.replaceChildren(el("div", "ask-q", question), el("div", "ask-thinking", meta.llm.available ? "Thinking with the local LLM" : "Searching the knowledge graph"));
+  $("ask-send").disabled = true;
+  pulse(2, 5, "sim");
+  try {
+    renderAnswer(await post("/api/ask", { question }));
+  } catch (err) {
+    box.replaceChildren(el("div", "ask-q", question), el("div", "ask-note warn", err.message));
+  } finally {
+    $("ask-send").disabled = false;
+  }
+}
+
 /* ---------- wiring ---------- */
 
 async function init() {
   meta = await (await fetch("/api/meta")).json();
   $("machine").textContent = meta.machine;
   buildPipeline();
+  $("llm-badge").textContent = meta.llm.available ? `${meta.llm.model} · local` : "no LLM · facts only";
+  $("llm-badge").classList.toggle("off", !meta.llm.available);
+  $("ask-form").onsubmit = (ev) => { ev.preventDefault(); ask($("ask-input").value); };
   buildRig();
   buildGauges();
   const T = meta.thresholds;

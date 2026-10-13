@@ -189,3 +189,19 @@ def test_readings_flow_through_mosquitto_at_qos1():
     finally:
         proc.terminate()
         proc.wait(timeout=5)
+
+
+def test_utc_z_timestamps_are_accepted():
+    topic, raw = encode_reading(READINGS[0])
+    msg = json.loads(raw)
+    msg["timestamp"] = "2026-10-13T10:14:03Z"
+    assert decode_reading(topic, json.dumps(msg).encode()).timestamp == "2026-10-13T10:14:03+00:00"
+
+
+def test_replaying_the_same_rows_again_opens_new_distinct_events(causal):
+    from dataclasses import replace
+    eng = ReplayEngine(InMemoryGraphStore, causal, mode="mqtt")
+    run1 = [e for r in READINGS for e in eng.ingest_external(replace(r, timestamp="2026-10-13T10:00:00+05:30"))]
+    run2 = [e for r in READINGS for e in eng.ingest_external(replace(r, timestamp="2026-10-13T10:05:00+05:30"))]
+    assert run1 and run2 and run1[0]["id"] != run2[0]["id"]
+    assert len(eng.store.failure_events("MILL-01")) == len(eng.events) == 2

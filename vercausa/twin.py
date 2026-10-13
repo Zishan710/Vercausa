@@ -11,11 +11,18 @@ its 200-240 min window) produces one FailureEvent, not one per reading.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from vercausa.detection import DetectionResult, evaluate_reading
 from vercausa.kg import FailureEventRecord, GraphStore
 from vercausa.readings import SensorReading
+
+
+def _stamp(timestamp: str) -> str:
+    """Digits of the reading time, so an event ID stays unique when the same
+    dataset row is replayed again (e.g. the machine publisher restarted)."""
+    return re.sub(r"\D", "", timestamp)
 
 
 @dataclass
@@ -51,7 +58,7 @@ class DigitalTwin:
         snapshot = dict(v, product_variant=reading.product_variant)
         new_events = [
             FailureEventRecord(
-                event_id=f"{reading.machine_id}-{mech}-{reading.source_row}",
+                event_id=f"{reading.machine_id}-{mech}-{reading.source_row}-{_stamp(reading.timestamp)}",
                 machine_id=reading.machine_id,
                 mechanism=mech,
                 timestamp=reading.timestamp,

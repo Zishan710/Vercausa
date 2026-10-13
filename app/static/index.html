@@ -96,6 +96,15 @@
       <div class="panel-head"><h2>Failure risk now <span class="tag">causal model</span></h2></div>
       <div id="risks" class="risks"></div>
     </div>
+    <div class="panel ask-panel reveal d2">
+      <div class="panel-head"><h2>Ask Vercausa <span class="tag">GraphRAG</span></h2><span id="llm-badge" class="llm-badge">checking…</span></div>
+      <div id="ask-suggest" class="chips"></div>
+      <form id="ask-form" class="ask-form" autocomplete="off">
+        <input id="ask-input" type="text" placeholder="Why did the machine fail at reading 51?" aria-label="Ask a question">
+        <button id="ask-send" class="btn primary" type="submit">Ask</button>
+      </form>
+      <div id="ask-answer" class="ask-answer" hidden></div>
+    </div>
     <div class="panel alerts-panel reveal d3">
       <div class="panel-head"><h2>Detected failures <span id="alert-count" class="count">0</span></h2></div>
       <div id="alerts" class="alerts"><p class="empty-note">No failures detected yet.</p></div>
